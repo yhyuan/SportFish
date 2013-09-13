@@ -148,7 +148,11 @@ rows = cursor.fetchall()
 #advisoryIndexDict = {'11': 'a', '10': '8', '00': '6', '20': '5', '48': 'b', '44': '7', '42': '9', '88': '4', '40': '3', 'xx': '0', '80': '2', '84': '1'}
 sites = list(set(map(lambda row: row[0], rows)))
 advisory_file = open("advisory.txt", "w")
-advisory_file.write( "WATERBODYC\tLOCNAME_EN\tLOCNAME_FR\tLATITUDE\tLONGITUDE\tGUIDELOC_EN\tGUIDELOC_FR\tSPECIES_EN\tSPECIES_FR\tLAT_DISPLAY\tLONG_DISPLAY\tADVISORY\tANALYMETHOD\n")
+#advisory_file.write( "WATERBODYC\tLOCNAME_EN\tLOCNAME_FR\tLATITUDE\tLONGITUDE\tGUIDELOC_EN\tGUIDELOC_FR\tSPECIES_EN\tSPECIES_FR\tLAT_DISPLAY\tLONG_DISPLAY\tADVISORY\tANALYMETHOD\n")
+#advisory_file.write("CREATE TABLE SPORTFISH_DATA ( WATERBODYC  int, LOCNAME_EN varchar2(4000), LOCNAME_FR varchar2(4000), LATITUDE NUMBER(16,8), LONGITUDE NUMBER(16,8), GUIDELOC_EN varchar2(4000), GUIDELOC_FR varchar2(4000), SPECIES_EN varchar2(4000), SPECIES_FR varchar2(4000), LAT_DISPLAY varchar2(10), LONG_DISPLAY varchar2(10), ADVISORY varchar2(4000), ANALYMETHOD varchar2(4000));\n")
+station_file = open("station.txt", "w")
+station_file.write( "WATERBODYC\tLOCNAME_EN\tLOCNAME_FR\tLATITUDE\tLONGITUDE\tGUIDELOC_EN\tGUIDELOC_FR\tLAT_DISPLAY\tLONG_DISPLAY\n")
+
 for site in sites:
 	site_rows = filter(lambda row: row[0] == site, rows)
 	speciesList = list(set(map(lambda row: row[1], site_rows)))
@@ -160,7 +164,9 @@ for site in sites:
 		locDesc = row0[10].split("|")
 	#elif (not(row0[10] is None)):
 	#	locDesc[0] = row0[10]
-	advisory_file.write(site + "\t\"" + row0[6] + "\"\t\"" + row0[7] + "\"\t" + str(convertLatLng(row0[8]))  + "\t" + str(-convertLatLng(row0[9]))  + "\t\"" + locDesc[0]  + "\"\t\"" +  locDesc[1]  + "\"\t\"" +  getSpeciesNames(speciesList, "EN") + "\"\t\"" +  getSpeciesNames(speciesList, "FR") + "\"\t\"" +  convertLatLngString(row0[8]) + "\"\t\"" +  convertLatLngString(row0[9]) + "\"")
+	#advisory_file.write(site + "\t\"" + row0[6] + "\"\t\"" + row0[7] + "\"\t" + str(convertLatLng(row0[8]))  + "\t" + str(-convertLatLng(row0[9]))  + "\t\"" + locDesc[0]  + "\"\t\"" +  locDesc[1]  + "\"\t\"" +  getSpeciesNames(speciesList, "EN") + "\"\t\"" +  getSpeciesNames(speciesList, "FR") + "\"\t\"" +  convertLatLngString(row0[8]) + "\"\t\"" +  convertLatLngString(row0[9]) + "\"")
+	station_file.write(site + "\t\"" + row0[6] + "\"\t\"" + row0[7] + "\"\t" + str(convertLatLng(row0[8]))  + "\t" + str(-convertLatLng(row0[9]))  + "\t\"" + locDesc[0]  + "\"\t\"" +  locDesc[1]  + "\"\t\"" +  convertLatLngString(row0[8]) + "\"\t\"" +  convertLatLngString(row0[9]) + "\"\n")
+	advisory_file.write(site + "\t" + getSpeciesNames(speciesList, "EN") + "\t" +  getSpeciesNames(speciesList, "FR") + "")
 	for species in speciesList:
 		species_rows = filter(lambda row: row[1] == species, site_rows)
 		populationTypeList = list(set(map(lambda row: row[2], species_rows)))
@@ -179,14 +185,31 @@ for site in sites:
 		encodeList = encode(''.join(populationTypeAdv))
 		encoderesult = ""
 		for encodeitem in encodeList:
-			encoderesult = encoderesult + encodeitem[0] + str(encodeitem[1])
-		result.append("'" + species + "':'" + str(encoderesult) + "'")
+			encoderesult = encoderesult + encodeitem[0] + lookupList[encodeitem[1]]
+		result.append('"' + species + '":"' + str(encoderesult) + '"')
 		analysisMethod = []
 		for row in species_rows:
 			analysisMethod = list(set(analysisMethod + analysisDict[row[5]]))
+		#print site + "\t" + species
+		#print analysisMethod
+		analysisMethod = filter(lambda x: len(x) > 0, analysisMethod)
+		analysisMethod = map(lambda x: int(x), analysisMethod)
 		analysisMethod.sort()
+		#print analysisMethod
 		analysisMethod = map(lambda x: str(x), analysisMethod)
-		analysisMethodResult.append("'" + species + "':'" + ",".join(analysisMethod) + "'")
+		analysisMethodResult.append('"' + species + '":"' + ",".join(analysisMethod) + '"')
 	advisory_file.write("\t{" + ",".join(result) + "}\t{" + ",".join(analysisMethodResult) + "}\n")
+	#advisory_file.write("INSERT INTO SPORTFISH_DATA VALUES (" + site + ", \"" + row0[6] + "\", \"" + row0[7] + "\", " + str(convertLatLng(row0[8]))  + ", " + str(-convertLatLng(row0[9]))  + ", \"" + locDesc[0]  + "\", \"" +  locDesc[1]  + "\", \"" +  getSpeciesNames(speciesList, "EN") + "\", \"" +  getSpeciesNames(speciesList, "FR") + "\", \"" +  convertLatLngString(row0[8]) + "\", \"" +  convertLatLngString(row0[9]) + "\", '{" + ",".join(result) + "}','{" + ",".join(analysisMethodResult) + "}');\n");
+station_file.close()
 advisory_file.close()
 #print advisoryIndexDict
+
+# Since ArcGIS can not open the text file with text field which is longer than 255 characters, the following steps are required. 
+# 1. Create a table in Oracle with following SQL: CREATE TABLE SPORTFISH_DATA ( WATERBODYC  int, SPECIES_EN varchar2(4000), SPECIES_FR varchar2(4000), ADVISORY varchar2(4000), ANALYMETHOD varchar2(4000));
+# 2. Use SQL loader to load the advisory.txt to Oracle. sqlldr username/password@sde control=sportfish.ctl, log=1.log, bad=1.bad
+# 3. Use ArcGIS to convert station.txt to feature class. Join it with the SPORTFISH_DATA table in Oracle and create a required feature class. 
+# 
+#
+#
+#
+#
