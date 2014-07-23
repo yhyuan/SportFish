@@ -1,3 +1,4 @@
+# This script reads a table named FISH_ADVISORY to generate a file geodatabase. 
 import sys, arcpy, os, zipfile, time
 reload(sys)
 sys.setdefaultencoding("latin-1")
