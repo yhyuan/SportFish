@@ -292,6 +292,9 @@ arcpy.Delete_management(arcpy.env.workspace + "\\analysis", "FeatureClass")
 arcpy.Project_management(arcpy.env.workspace + "\\species", arcpy.env.workspace + "\\species_Feature", "PROJCS['WGS_1984_Web_Mercator_Auxiliary_Sphere',GEOGCS['GCS_WGS_1984',DATUM['D_WGS_1984',SPHEROID['WGS_1984',6378137.0,298.257223563]],PRIMEM['Greenwich',0.0],UNIT['Degree',0.0174532925199433]],PROJECTION['Mercator_Auxiliary_Sphere'],PARAMETER['False_Easting',0.0],PARAMETER['False_Northing',0.0],PARAMETER['Central_Meridian',0.0],PARAMETER['Standard_Parallel_1',0.0],PARAMETER['Auxiliary_Sphere_Type',0.0],UNIT['Meter',1.0]]", "NAD_1983_To_WGS_1984_5", "GEOGCS['GCS_North_American_1983',DATUM['D_North_American_1983',SPHEROID['GRS_1980',6378137.0,298.257222101]],PRIMEM['Greenwich',0.0],UNIT['Degree',0.0174532925199433]]")
 arcpy.Delete_management(arcpy.env.workspace + "\\species", "FeatureClass")
 
+# Process: Add Attribute Index
+arcpy.AddIndex_management(arcpy.env.workspace + "\\GuideLocs", "SPECIES_EN;SPECIES_FR;LOCNAME_EN;LOCNAME_FR", "GuideIndex", "NON_UNIQUE", "NON_ASCENDING")
+
 # Prepare the msd, mxd, and readme.txt
 os.system("copy " + INPUT_PATH + "\\SportFish.msd " + OUTPUT_PATH)
 os.system("copy " + INPUT_PATH + "\\SportFish.mxd " + OUTPUT_PATH)
@@ -306,7 +309,7 @@ f.write(data)
 f.close()
 
 # Compress the msd, mxd, readme.txt and file geodatabase together into a zip file named SportFish.zip, which will be send to web service publisher. 
-'''target_dir = OUTPUT_PATH + '\\SportFish.gdb'
+target_dir = OUTPUT_PATH + '\\SportFish.gdb'
 zip = zipfile.ZipFile(OUTPUT_PATH + '\\SportFish.zip', 'w', zipfile.ZIP_DEFLATED)
 rootlen = len(target_dir) + 1
 for base, dirs, files in os.walk(target_dir):
@@ -317,7 +320,7 @@ zip.write(OUTPUT_PATH + '\\SportFish.msd', "SportFish.msd")
 zip.write(OUTPUT_PATH + '\\SportFish.mxd', "SportFish.mxd")
 zip.write(OUTPUT_PATH + '\\readme_SportFish.txt', "readme_SportFish.txt")
 zip.close()
-'''
+
 os.system("del " + OUTPUT_PATH + "\\StationOtherInfo.txt")
 
 elapsed_time = time.time() - start_time
