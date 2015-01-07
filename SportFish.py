@@ -6,24 +6,30 @@ sys.setdefaultencoding("latin-1")
 import cx_Oracle
 from datetime import date
 start_time = time.time()
-def encode(input_string):
-	count = 1
-	prev = ''
-	lst = []
-	for character in input_string:
-		if character != prev:
-			if prev:
-				entry = (prev,count)
-				lst.append(entry)
-				#print lst
-			count = 1
-			prev = character
-		else:
-			count += 1
-	else:
-		entry = (character,count)
-		lst.append(entry)
-	return lst
+def createFeatureClass(featureName, featureData, featureFieldList, featureInsertCursorFields):
+	print "Create " + featureName + " feature class"
+	featureNameNAD83 = featureName + "_NAD83"
+	featureNameNAD83Path = arcpy.env.workspace + "\\"  + featureNameNAD83
+	arcpy.CreateFeatureclass_management(arcpy.env.workspace, featureNameNAD83, "POINT", "", "DISABLED", "DISABLED", "", "", "0", "0", "0")
+	# Process: Define Projection
+	arcpy.DefineProjection_management(featureNameNAD83Path, "GEOGCS['GCS_North_American_1983',DATUM['D_North_American_1983',SPHEROID['GRS_1980',6378137.0,298.257222101]],PRIMEM['Greenwich',0.0],UNIT['Degree',0.0174532925199433]]")
+	# Process: Add Fields	
+	for featrueField in featureFieldList:
+		arcpy.AddField_management(featureNameNAD83Path, featrueField[0], featrueField[1], featrueField[2], featrueField[3], featrueField[4], featrueField[5], featrueField[6], featrueField[7], featrueField[8])
+	# Process: Append the records
+	cntr = 1
+	try:
+		with arcpy.da.InsertCursor(featureNameNAD83, featureInsertCursorFields) as cur:
+			for rowValue in featureData:
+				cur.insertRow(rowValue)
+				cntr = cntr + 1
+	except Exception as e:
+		print "\tError: " + featureName + ": " + e.message
+	# Change the projection to web mercator
+	arcpy.Project_management(featureNameNAD83Path, arcpy.env.workspace + "\\" + featureName, "PROJCS['WGS_1984_Web_Mercator_Auxiliary_Sphere',GEOGCS['GCS_WGS_1984',DATUM['D_WGS_1984',SPHEROID['WGS_1984',6378137.0,298.257223563]],PRIMEM['Greenwich',0.0],UNIT['Degree',0.0174532925199433]],PROJECTION['Mercator_Auxiliary_Sphere'],PARAMETER['False_Easting',0.0],PARAMETER['False_Northing',0.0],PARAMETER['Central_Meridian',0.0],PARAMETER['Standard_Parallel_1',0.0],PARAMETER['Auxiliary_Sphere_Type',0.0],UNIT['Meter',1.0]]", "NAD_1983_To_WGS_1984_5", "GEOGCS['GCS_North_American_1983',DATUM['D_North_American_1983',SPHEROID['GRS_1980',6378137.0,298.257222101]],PRIMEM['Greenwich',0.0],UNIT['Degree',0.0174532925199433]]")
+	#arcpy.FeatureClassToShapefile_conversion([featureNameNAD83Path], OUTPUT_PATH + "\\Shapefile")
+	arcpy.Delete_management(featureNameNAD83Path, "FeatureClass")
+	print "Finish " + featureName + " feature class."
 
 OUTPUT_PATH = "output"
 INPUT_PATH = "input"
@@ -40,131 +46,52 @@ file.close()
 connection = cx_Oracle.connect('sportfish/' + password + '@sde')
 cursor = connection.cursor()
 
-# Generate species feature class. 
-print "Create species feature class"
+# Generate SPECIES feature class. 
+featureName = "SPECIES"
+featureFieldList = [["SPECIES_CODE", "TEXT", "", "", "", "", "NON_NULLABLE", "REQUIRED", ""], ["SPECNAME", "TEXT", "", "", "", "", "NULLABLE", "NON_REQUIRED", ""], ["NOM_D_ESPECE", "TEXT", "", "", "", "", "NULLABLE", "NON_REQUIRED", ""]]
+featureInsertCursorFields = tuple(["SHAPE@XY"] + map(lambda field: field[0], featureFieldList))
 cursor.execute('SELECT SPECIES_CODE, SPECNAME, NOM_D_ESPECE FROM FISH_ADVISORY')
-rows = cursor.fetchall()
-speciesList = list(set(rows))
-speciesList = map(lambda row: ["" if (row[0] is None) else row[0], "" if (row[1] is None) else row[1], "" if (row[2] is None) else row[2]], speciesList)
-arcpy.CreateFeatureclass_management(arcpy.env.workspace, "species", "POINT", "", "DISABLED", "DISABLED", "", "", "0", "0", "0")
-arcpy.DefineProjection_management(arcpy.env.workspace + "\\species", "GEOGCS['GCS_North_American_1983',DATUM['D_North_American_1983',SPHEROID['GRS_1980',6378137.0,298.257222101]],PRIMEM['Greenwich',0.0],UNIT['Degree',0.0174532925199433]]")
-arcpy.AddField_management(arcpy.env.workspace + "\\species", "SPECIES_CODE", "TEXT", "", "", "", "", "NON_NULLABLE", "REQUIRED", "")
-arcpy.AddField_management(arcpy.env.workspace + "\\species", "SPECNAME", "TEXT", "", "", "", "", "NULLABLE", "NON_REQUIRED", "")
-arcpy.AddField_management(arcpy.env.workspace + "\\species", "NOM_D_ESPECE", "TEXT", "", "", "", "", "NULLABLE", "NON_REQUIRED", "")
+rows = map(lambda row: [(0, 0), "" if (row[0] is None) else row[0], "" if (row[1] is None) else row[1], "" if (row[2] is None) else row[2]], list(set(cursor.fetchall())))
+#print len(rows)
+createFeatureClass(featureName, rows, featureFieldList, featureInsertCursorFields)
+print len(rows)
 speciesDict = {}
-try:
-	with arcpy.da.InsertCursor("species", ("SHAPE@XY", "SPECIES_CODE", "SPECNAME", "NOM_D_ESPECE")) as cur:
-		for species in speciesList:
-			cur.insertRow([(0, 0), species[0], species[1], species[2]])
-			speciesDict[species[0]] = [species[1], species[2]]
-except Exception as e:
-	print e.message
+for row in rows:
+	speciesDict[row[1]] = [row[2], row[3]]
 
-# Generate analysis file and analysisDict.
-print "Create analysis feature class"
-cursor.execute('SELECT ANALYSIS_CLASS_ID, ANALYSIS_DESC FROM FISH_ADVISORY')
-rows = cursor.fetchall()
-analysisList = list(set(rows))
-arcpy.CreateFeatureclass_management(arcpy.env.workspace, "analysis", "POINT", "", "DISABLED", "DISABLED", "", "", "0", "0", "0")
-arcpy.DefineProjection_management(arcpy.env.workspace + "\\analysis", "GEOGCS['GCS_North_American_1983',DATUM['D_North_American_1983',SPHEROID['GRS_1980',6378137.0,298.257222101]],PRIMEM['Greenwich',0.0],UNIT['Degree',0.0174532925199433]]")
-arcpy.AddField_management(arcpy.env.workspace + "\\analysis", "ANALYSIS_CLASS_ID", "LONG", "", "", "", "", "NON_NULLABLE", "REQUIRED", "")
-arcpy.AddField_management(arcpy.env.workspace + "\\analysis", "ANALYSIS_DESC", "TEXT", "", "", "", "", "NULLABLE", "NON_REQUIRED", "")
-analysisDict = {}
-try:
-	with arcpy.da.InsertCursor("analysis", ("SHAPE@XY", "ANALYSIS_CLASS_ID", "ANALYSIS_DESC")) as cur:
-		for analysis in analysisList:
-			cur.insertRow([(0, 0), analysis[0], analysis[1]])
-			analysisDict[analysis[0]] = analysis[1].split("_");
-except Exception as e:
-	print e.message
+# Generate ADVISORIES feature class. 
+featureName = "ADVISORIES"
+featureFieldList = [["GUIDE_WATERBODY_CODE", "TEXT", "", "", "", "", "NON_NULLABLE", "REQUIRED", ""], ["SPECIES_CODE", "TEXT", "", "", "", "", "NON_NULLABLE", "REQUIRED", ""], ["POPULATION_TYPE_ID", "LONG", "", "", "", "", "NON_NULLABLE", "REQUIRED", ""], ["LENGTH_CATEGORY_ID", "LONG", "", "", "", "", "NON_NULLABLE", "REQUIRED", ""], ["ADV_LEVEL", "LONG", "", "", "", "", "NON_NULLABLE", "REQUIRED", ""], ["ADV_CAUSE_ID", "LONG", "", "", "", "", "NULLABLE", "NON_REQUIRED", ""]]
+featureInsertCursorFields = tuple(["SHAPE@XY"] + map(lambda field: field[0], featureFieldList))
+cursor.execute('SELECT GUIDE_WATERBODY_CODE, SPECIES_CODE, POPULATION_TYPE_ID, LENGTH_CATEGORY_ID, ADV_LEVEL, ADV_CAUSE_ID FROM FISH_ADVISORY')
+rows = map(lambda row: [(0, 0)] + list(row), cursor.fetchall())
+createFeatureClass(featureName, rows, featureFieldList, featureInsertCursorFields)
 
-# Generate analysis file and analysisDict.
-print "Create cause feature class"
-cursor.execute('SELECT ADV_CAUSE_ID, ADV_CAUSE_DESC FROM FISH_ADVISORY')
-rows = cursor.fetchall()
-causeList = list(set(rows))
-arcpy.CreateFeatureclass_management(arcpy.env.workspace, "cause", "POINT", "", "DISABLED", "DISABLED", "", "", "0", "0", "0")
-arcpy.DefineProjection_management(arcpy.env.workspace + "\\cause", "GEOGCS['GCS_North_American_1983',DATUM['D_North_American_1983',SPHEROID['GRS_1980',6378137.0,298.257222101]],PRIMEM['Greenwich',0.0],UNIT['Degree',0.0174532925199433]]")
-arcpy.AddField_management(arcpy.env.workspace + "\\cause", "ADV_CAUSE_ID", "LONG", "", "", "", "", "NULLABLE", "NON_REQUIRED", "")
-arcpy.AddField_management(arcpy.env.workspace + "\\cause", "ADV_CAUSE_DESC", "TEXT", "", "", "", "", "NULLABLE", "NON_REQUIRED", "")
-try:
-	with arcpy.da.InsertCursor("cause", ("SHAPE@XY", "ADV_CAUSE_ID", "ADV_CAUSE_DESC")) as cur:
-		for cause in causeList:
-			cur.insertRow([(0, 0), cause[0], cause[1]])
-except Exception as e:
-	print e.message
-	
-# Generate length category file and lengthCategoryDict.
-print "Create lengthCategory feature class"
-cursor.execute('SELECT LENGTH_CATEGORY_ID FROM FISH_ADVISORY')
-rows = cursor.fetchall()
-lengthCategoryList = list(set(rows))
-lengthCategoryList.sort()
-arcpy.CreateFeatureclass_management(arcpy.env.workspace, "lengthCategory", "POINT", "", "DISABLED", "DISABLED", "", "", "0", "0", "0")
-arcpy.DefineProjection_management(arcpy.env.workspace + "\\lengthCategory", "GEOGCS['GCS_North_American_1983',DATUM['D_North_American_1983',SPHEROID['GRS_1980',6378137.0,298.257222101]],PRIMEM['Greenwich',0.0],UNIT['Degree',0.0174532925199433]]")
-arcpy.AddField_management(arcpy.env.workspace + "\\lengthCategory", "LENGTH_CATEGORY_ID", "TEXT", "", "", "", "", "NON_NULLABLE", "REQUIRED", "")
-arcpy.AddField_management(arcpy.env.workspace + "\\lengthCategory", "INDEX", "TEXT", "", "", "", "", "NULLABLE", "NON_REQUIRED", "")
-lengthCategoryDict = {}
-i = 0
-try:
-	with arcpy.da.InsertCursor("lengthCategory", ("SHAPE@XY", "LENGTH_CATEGORY_ID", "INDEX")) as cur:
-		for lengthCategory in lengthCategoryList:
-			cur.insertRow([(0, 0),  str(lengthCategory[0]), str(i)])
-			lengthCategoryDict[lengthCategory[0]] = i;
-			i = i + 1
-except Exception as e:
-	print e.message
+# Generate POPULATION_TYPE feature class. 
+featureName = "POPULATION_TYPE"
+featureFieldList = [["POPULATION_TYPE_ID", "LONG", "", "", "", "", "NON_NULLABLE", "REQUIRED", ""], ["POPULATION_TYPE_DESC", "TEXT", "", "", "", "", "NULLABLE", "NON_REQUIRED", ""]]
+featureInsertCursorFields = tuple(["SHAPE@XY"] + map(lambda field: field[0], featureFieldList))
+cursor.execute('SELECT POPULATION_TYPE_ID, POPULATION_TYPE_DESC FROM FISH_ADVISORY')
+rows = map(lambda row: [(0, 0)] + list(row), list(set(cursor.fetchall())))
+createFeatureClass(featureName, rows, featureFieldList, featureInsertCursorFields)
 
-# Generate advisoryIndexDict.
-print "Create advisoryIndexDict feature class"
-#print lengthCategoryDict
-cursor.execute('SELECT GUIDE_WATERBODY_CODE, SPECIES_CODE, POPULATION_TYPE_ID, LENGTH_CATEGORY_ID, ADV_LEVEL, ANALYSIS_CLASS_ID FROM FISH_ADVISORY')
-rows = cursor.fetchall()
-sites = list(set(map(lambda row: row[0], rows)))
-arcpy.CreateFeatureclass_management(arcpy.env.workspace, "advisoryIndexDict", "POINT", "", "DISABLED", "DISABLED", "", "", "0", "0", "0")
-arcpy.DefineProjection_management(arcpy.env.workspace + "\\advisoryIndexDict", "GEOGCS['GCS_North_American_1983',DATUM['D_North_American_1983',SPHEROID['GRS_1980',6378137.0,298.257222101]],PRIMEM['Greenwich',0.0],UNIT['Degree',0.0174532925199433]]")
-arcpy.AddField_management(arcpy.env.workspace + "\\advisoryIndexDict", "ADVISORY_LEVEL", "TEXT", "", "", "", "", "NON_NULLABLE", "REQUIRED", "")
-arcpy.AddField_management(arcpy.env.workspace + "\\advisoryIndexDict", "KEY", "TEXT", "", "", "", "", "NULLABLE", "NON_REQUIRED", "")
+# Generate LENGTH_CATEGORY feature class. 
+featureName = "LENGTH_CATEGORY"
+featureFieldList = [["LENGTH_CATEGORY_ID", "LONG", "", "", "", "", "NON_NULLABLE", "REQUIRED", ""], ["LENGTH_CATEGORY_LABEL", "TEXT", "", "", "", "", "NULLABLE", "NON_REQUIRED", ""]]
+featureInsertCursorFields = tuple(["SHAPE@XY"] + map(lambda field: field[0], featureFieldList))
+cursor.execute('SELECT LENGTH_CATEGORY_ID, LENGTH_CATEGORY_LABEL FROM FISH_ADVISORY')
+rows = map(lambda row: [(0, 0)] + list(row), list(set(cursor.fetchall())))
+createFeatureClass(featureName, rows, featureFieldList, featureInsertCursorFields)
 
-advisoryIndexDict = {}
-lookupList = map(lambda i: str(i), list(range(0, 10))) + map(chr, range(97, 123))
-for site in sites:
-	site_rows = filter(lambda row: row[0] == site, rows)
-	speciesList = list(set(map(lambda row: row[1], site_rows)))
-	result = []
-	analysisMethodResult = []
-	for species in speciesList:
-		species_rows = filter(lambda row: row[1] == species, site_rows)
-		populationTypeList = list(set(map(lambda row: row[2], species_rows)))
-		dict = {}
-		for populationType in populationTypeList:
-			populationType_rows = filter(lambda row: row[2] == populationType, species_rows)
-			adv = ['x'] * 13
-			for row in populationType_rows:
-				lengthIndex = lengthCategoryDict[row[3]]
-				adv[lengthIndex] = str(row[4])
-			dict[populationType] = adv
-		populationTypeAdv = [''] * 13
-		for i in range(13):
-			populationTypeAdv[i] = dict[1][i] + dict[2][i]
-			if (not (populationTypeAdv[i] in advisoryIndexDict)):
-				advisoryIndexDict[populationTypeAdv[i]] = lookupList[len(advisoryIndexDict)]
+# Generate ADV_CAUSE feature class. 
+featureName = "ADV_CAUSE"
+featureFieldList = [["ADV_CAUSE_ID", "LONG", "", "", "", "", "NON_NULLABLE", "REQUIRED", ""], ["ADV_CAUSE_DESC", "TEXT", "", "", "", "", "NULLABLE", "NON_REQUIRED", ""]]
+featureInsertCursorFields = tuple(["SHAPE@XY"] + map(lambda field: field[0], featureFieldList))
+cursor.execute('SELECT ADV_CAUSE_ID, ADV_CAUSE_DESC FROM FISH_ADVISORY WHERE ADV_CAUSE_ID IS NOT NULL')
+rows = map(lambda row: [(0, 0)] + list(row), list(set(cursor.fetchall())))
+createFeatureClass(featureName, rows, featureFieldList, featureInsertCursorFields)
 
-try:
-	with arcpy.da.InsertCursor("advisoryIndexDict", ("SHAPE@XY", "ADVISORY_LEVEL", "KEY")) as cur:
-		for key in advisoryIndexDict.keys():
-			cur.insertRow([(0, 0),  advisoryIndexDict[key], key])
-except Exception as e:
-	print e.message
-
-#print lengthCategoryDict
-
-#print advisoryIndexDict;
-print "Create GuideLocs feature class"
-#speciesDict = {"051": "Bowfin","063": "Gizzard Shad","071": "Pink Salmon","073": "Coho Salmon","075": "Chinook Salmon","076": "Rainbow Trout","077": "Atlantic Salmon","078": "Brown Trout","080": "Brook Trout","081": "Lake Trout","082": "Splake","087": "Siscowet","091": "Lake Whitefish","093": "Cisco(Lake Herring)","102": "Round Whitefish","121": "Rainbow Smelt","131": "Northern Pike","151": "Goldeye","152": "Mooneye","161": "Quillback Carpsucker","162": "Longnose Sucker","163": "White Sucker","166": "Bigmouth Buffalo","168": "Silver Redhorse","177": "Redhorse Sucker","181": "Goldfish","186": "Common Carp","233": "Brown Bullhead","234": "Channel Catfish","271": "Ling (Burbot)","301": "White Perch","302": "White Bass","311": "Rock Bass","313": "Pumpkinseed","314": "Bluegill","316": "Smallmouth Bass","317": "Largemouth Bass","318": "White Crappie","319": "Black Crappie","331": "Yellow Perch","332": "Sauger","334": "Walleye","371": "Freshwater Drum"}
-#print len(speciesDict)
-#analysisDict = [[],[1],[2],[3],[4],[5],[6],[8],[10],[1,12],[2,10],[2,10,11],[2,10,11,12],[2,10,12],[2,11],[2,12],[2,7],[2,7,8,9],[2,7,9],[2,8],[2,8,10],[2,8,10,],[2,8,10,11],[2,8,10,12],[2,8,9],[2,8,9,10],[2,8,9,10,11],[2,8,9,10,12],[],[2,9],[2,9,10],[2,9,10,11],[2,9,10,12],[5,10],[5,10,11],[5,10,11,12],[5,10,12],[5,12],[5,7],[5,7,8],[5,7,8,9],[5,7,9],[5,8],[5,8,10],[5,8,11],[5,8,9],[5,8,9,10],[5,8,9,10,11],[5,9],[5,9,10],[5,9,10,11],[6,12],[8,9],[1,10],[13],[2,8,12],[1,13],[2,13],[2,9,11],[2,7,9,11],[2,7,8,9,10,12],[5,8,9,10,11,12],[5,8,9,10,12],[],[],[],[5,8,10,12,13],[],[2,10,11,12,13],[2,10,13],[5,10,12,13],[],[2,6],[5,9,10,11,12,13],[2,7,12],[2,7,11,12],[2,10,12,13],[2,10,11,13],[5,8,9,12],[5,10,11,12,13],[2,8,9,10,11,12,13],[5,8,9,10,11,12,13],[5,8,10,11,12,13],[5,13],[2,9,10,12,13],[2,9,10,11,12],[2,7,9,11,12],[2,8,9,10,13],[5,8,9,10,13],[5,8,9,10,12,13]]
-#lengthCategoryDict = {15:0,20:1,25:2,30:3,35:4,40:5,45:6,50:7,55:8,60:9,65:10,70:11,75:12};
+# Generate GUIDELOCATIONS feature class. 
 def convertLatLngString(latlng):
 	latlngStr = str(latlng)
 	degrees = latlngStr[:2]
@@ -189,156 +116,35 @@ def getSpeciesNames(speciesList, language):
 		index = 0
 	speciesNames = map(lambda species: speciesDict[species][index].replace(" ", "_").decode('latin-1').upper(), speciesList)
 	return "-" + "-".join(speciesNames) + "-"
+def getLocationDescription(location, language):
+	locDesc = ["  ", "  "] 
+	if((not(location is None)) and ("|" in location)):
+		locDesc = location.split("|")
+	if (language == "EN"):
+		return locDesc[0]
+	else:
+		return locDesc[1]
 
-cursor.execute('SELECT GUIDE_WATERBODY_CODE, SPECIES_CODE, POPULATION_TYPE_ID, LENGTH_CATEGORY_ID, ADV_LEVEL, ANALYSIS_CLASS_ID, GUIDE_LOCNAME_ENG, GUIDE_LOCNAME_FR, LATITUDE, LONGITUDE, GUIDE_LOCDESC, ADV_CAUSE_ID FROM FISH_ADVISORY')
+cursor.execute('SELECT GUIDE_WATERBODY_CODE, SPECIES_CODE FROM FISH_ADVISORY')
 rows = cursor.fetchall()
-#advisoryIndexDict = {'11': 'a', '10': '8', '00': '6', '20': '5', '48': 'b', '44': '7', '42': '9', '88': '4', '40': '3', 'xx': '0', '80': '2', '84': '1'}
-sites = list(set(map(lambda row: row[0], rows)))
-
-arcpy.CreateFeatureclass_management(arcpy.env.workspace, "station", "POINT", "", "DISABLED", "DISABLED", "", "", "0", "0", "0")
-arcpy.DefineProjection_management(arcpy.env.workspace + "\\station", "GEOGCS['GCS_North_American_1983',DATUM['D_North_American_1983',SPHEROID['GRS_1980',6378137.0,298.257222101]],PRIMEM['Greenwich',0.0],UNIT['Degree',0.0174532925199433]]")
-arcpy.AddField_management(arcpy.env.workspace + "\\station", "WATERBODYC", "LONG", "", "", "", "", "NON_NULLABLE", "REQUIRED", "")
-#arcpy.AddField_management(arcpy.env.workspace + "\\station", "LOCNAME_EN", "TEXT", "", "", "", "", "NULLABLE", "NON_REQUIRED", "")
-#arcpy.AddField_management(arcpy.env.workspace + "\\station", "LOCNAME_FR", "TEXT", "", "", "", "", "NULLABLE", "NON_REQUIRED", "")
-arcpy.AddField_management(arcpy.env.workspace + "\\station", "LATITUDE", "DOUBLE", "", "", "", "", "NULLABLE", "NON_REQUIRED", "")
-arcpy.AddField_management(arcpy.env.workspace + "\\station", "LONGITUDE", "DOUBLE", "", "", "", "", "NULLABLE", "NON_REQUIRED", "")
-#arcpy.AddField_management(arcpy.env.workspace + "\\station", "GUIDELOC_EN", "TEXT", "", "", "", "", "NULLABLE", "NON_REQUIRED", "")
-#arcpy.AddField_management(arcpy.env.workspace + "\\station", "GUIDELOC_FR", "TEXT", "", "", "", "", "NULLABLE", "NON_REQUIRED", "")
-arcpy.AddField_management(arcpy.env.workspace + "\\station", "LAT_DISPLAY", "TEXT", "", "", "", "", "NULLABLE", "NON_REQUIRED", "")
-arcpy.AddField_management(arcpy.env.workspace + "\\station", "LONG_DISPLAY", "TEXT", "", "", "", "", "NULLABLE", "NON_REQUIRED", "")
-arcpy.AddField_management(arcpy.env.workspace + "\\station", "SPECIES_EN", "TEXT", "", "", "4000", "", "NULLABLE", "NON_REQUIRED", "")
-arcpy.AddField_management(arcpy.env.workspace + "\\station", "SPECIES_FR", "TEXT", "", "", "4000", "", "NULLABLE", "NON_REQUIRED", "")
-arcpy.AddField_management(arcpy.env.workspace + "\\station", "ADVISORY", "TEXT", "", "", "4000", "", "NULLABLE", "NON_REQUIRED", "")
-arcpy.AddField_management(arcpy.env.workspace + "\\station", "ANALYMETHOD", "TEXT", "", "", "4000", "", "NULLABLE", "NON_REQUIRED", "")
-arcpy.AddField_management(arcpy.env.workspace + "\\station", "CAUSE", "TEXT", "", "", "4000", "", "NULLABLE", "NON_REQUIRED", "")
-f = open (OUTPUT_PATH + "\\StationOtherInfo.txt","w")
-f.write("WATERBODYC\tLOCNAME_EN\tLOCNAME_FR\tGUIDELOC_EN\tGUIDELOC_FR\n")
-#print analysisDict
-try:
-#	with arcpy.da.InsertCursor("station", ("SHAPE@XY", "WATERBODYC", "LOCNAME_EN", "LOCNAME_FR", "LATITUDE", "LONGITUDE", "GUIDELOC_EN", "GUIDELOC_FR", "LAT_DISPLAY", "LONG_DISPLAY", "SPECIES_EN", "SPECIES_FR", "ADVISORY", "ANALYMETHOD")) as cur:
-	with arcpy.da.InsertCursor("station", ("SHAPE@XY", "WATERBODYC", "LATITUDE", "LONGITUDE", "LAT_DISPLAY", "LONG_DISPLAY", "SPECIES_EN", "SPECIES_FR", "ADVISORY", "ANALYMETHOD", "CAUSE")) as cur:
-		#for key in advisoryIndexDict.keys():
-		#	cur.insertRow([(0, 0),  advisoryIndexDict[key], key])
-		print (len(sites))
-		for site in sites:
-			#print site
-			site_rows = filter(lambda row: row[0] == site, rows)
-			#print site_rows
-			speciesList = list(set(map(lambda row: row[1], site_rows)))
-			result = []
-			analysisMethodResult = []
-			causeResult = []
-			row0 = site_rows[0]
-			locDesc = ["  ", "  "] 
-			#print "2"
-			if((not(row0[10] is None)) and ("|" in row0[10])):
-				locDesc = row0[10].split("|")
-			#print "3"
-			longitude = -convertLatLng(row0[9])
-			latitude = convertLatLng(row0[8])
-			#print "4"
-			#insertRow = [(longitude, latitude), int(site), row0[6], row0[7], latitude, longitude, locDesc[0], locDesc[1], convertLatLngString(row0[8]), convertLatLngString(row0[9]), getSpeciesNames(speciesList, "EN"), getSpeciesNames(speciesList, "FR")]
-			insertRow = [(longitude, latitude), site, latitude, longitude, convertLatLngString(row0[8]), convertLatLngString(row0[9]), getSpeciesNames(speciesList, "EN"), getSpeciesNames(speciesList, "FR")]
-			f.write(site + "\t\"" + row0[6] + "\"\t\"" + row0[7] + "\"\t\"" + locDesc[0] + "\"\t\"" + locDesc[1] + "\"\n")
-			#print "5"
-			for species in speciesList:
-				#print species
-				species_rows = filter(lambda row: row[1] == species, site_rows)
-				#print species_rows
-				populationTypeList = list(set(map(lambda row: row[2], species_rows)))
-				dict = {}
-				#print "1"
-				for populationType in populationTypeList:
-					populationType_rows = filter(lambda row: row[2] == populationType, species_rows)
-					adv = ['x'] * 13
-					for row in populationType_rows:
-						lengthIndex = lengthCategoryDict[row[3]]
-						adv[lengthIndex] = str(row[4])
-					dict[populationType] = adv
-				populationTypeAdv = [''] * 13
-				#print "2"
-				for i in range(13):
-					populationTypeAdv[i] = dict[1][i] + dict[2][i]
-					populationTypeAdv[i] = advisoryIndexDict[populationTypeAdv[i]]
-				encodeList = encode(''.join(populationTypeAdv))
-				encoderesult = ""
-				#print "3"
-				for encodeitem in encodeList:
-					encoderesult = encoderesult + encodeitem[0] + lookupList[encodeitem[1]]
-				result.append('"' + species + '":"' + str(encoderesult) + '"')
-				analysisMethod = []
-				#print "4"
-				
-				for row in species_rows:
-					analysisMethod = list(set(analysisMethod + analysisDict[row[5]]))
-				#print site + "\t" + species
-				#print analysisMethod
-				#print "5"
-				analysisMethod = filter(lambda x: len(x) > 0, analysisMethod)
-				analysisMethod = map(lambda x: int(x), analysisMethod)
-				analysisMethod.sort()
-				#print analysisMethod
-				analysisMethod = map(lambda x: str(x), analysisMethod)
-				analysisMethodResult.append('"' + species + '":"' + ",".join(analysisMethod) + '"')
-				#print site + "\t" + species
-				causeList = []
-				for row in species_rows:
-					if not (row[11] is None):
-						if (row[11] == 51 or row[11] == 52):
-							causeList = causeList + ['1', '2']  # PCB and HG
-						else:
-							causeList = causeList + [str(row[11])]
-				causeList = list(set(causeList))
-				#print causeList
-				causeResult.append('"' + species + '":"' + ",".join(causeList) + '"')
-				#print causeList
-				
-			insertRow = insertRow + ["{" + ",".join(result) + "}", "{" + ",".join(analysisMethodResult) + "}", "{" + ",".join(causeResult) + "}"]
-			#print insertRow
-			#print row0[6]
-			cur.insertRow(insertRow)
-
-except Exception as e:
-	print "Exception"
-	print e.message
-	f.close()
-f.close()
-
-arcpy.AddField_management(arcpy.env.workspace + "\\station", "LOCNAME_EN", "TEXT", "", "", "", "", "NULLABLE", "NON_REQUIRED", "")
-arcpy.AddField_management(arcpy.env.workspace + "\\station", "LOCNAME_FR", "TEXT", "", "", "", "", "NULLABLE", "NON_REQUIRED", "")
-arcpy.AddField_management(arcpy.env.workspace + "\\station", "GUIDELOC_EN", "TEXT", "", "", "", "", "NULLABLE", "NON_REQUIRED", "")
-arcpy.AddField_management(arcpy.env.workspace + "\\station", "GUIDELOC_FR", "TEXT", "", "", "", "", "NULLABLE", "NON_REQUIRED", "")
-arcpy.MakeFeatureLayer_management(arcpy.env.workspace + "\\station", "station_Layer", "", "", "OBJECTID OBJECTID VISIBLE NONE;Shape Shape VISIBLE NONE;WATERBODYC WATERBODYC VISIBLE NONE;LATITUDE LATITUDE VISIBLE NONE;LONGITUDE LONGITUDE VISIBLE NONE;LAT_DISPLAY LAT_DISPLAY VISIBLE NONE;LONG_DISPLAY LONG_DISPLAY VISIBLE NONE;SPECIES_EN SPECIES_EN VISIBLE NONE;SPECIES_FR SPECIES_FR VISIBLE NONE;ADVISORY ADVISORY VISIBLE NONE;ANALYMETHOD ANALYMETHOD VISIBLE NONE")
-arcpy.MakeTableView_management(OUTPUT_PATH + "\\StationOtherInfo.txt", "StationOtherInfo_View", "", "", "WATERBODYC WATERBODYC VISIBLE NONE;LOCNAME_EN LOCNAME_EN VISIBLE NONE;LOCNAME_FR LOCNAME_FR VISIBLE NONE;GUIDELOC_EN GUIDELOC_EN VISIBLE NONE;GUIDELOC_FR GUIDELOC_FR VISIBLE NONE")
-arcpy.AddJoin_management("station_Layer", "WATERBODYC", "StationOtherInfo_View", "WATERBODYC", "KEEP_ALL")
-arcpy.CalculateField_management("station_Layer", "station.LOCNAME_EN", "[StationOtherInfo.txt.LOCNAME_EN]", "VB", "")
-arcpy.CalculateField_management("station_Layer", "station.LOCNAME_FR", "[StationOtherInfo.txt.LOCNAME_FR]", "VB", "")
-arcpy.CalculateField_management("station_Layer", "station.GUIDELOC_EN", "[StationOtherInfo.txt.GUIDELOC_EN]", "VB", "")
-arcpy.CalculateField_management("station_Layer", "station.GUIDELOC_FR", "[StationOtherInfo.txt.GUIDELOC_FR]", "VB", "")
-arcpy.RemoveJoin_management("station_Layer", "")
-
-arcpy.Project_management(arcpy.env.workspace + "\\station", arcpy.env.workspace + "\\GuideLocs", "PROJCS['WGS_1984_Web_Mercator_Auxiliary_Sphere',GEOGCS['GCS_WGS_1984',DATUM['D_WGS_1984',SPHEROID['WGS_1984',6378137.0,298.257223563]],PRIMEM['Greenwich',0.0],UNIT['Degree',0.0174532925199433]],PROJECTION['Mercator_Auxiliary_Sphere'],PARAMETER['False_Easting',0.0],PARAMETER['False_Northing',0.0],PARAMETER['Central_Meridian',0.0],PARAMETER['Standard_Parallel_1',0.0],PARAMETER['Auxiliary_Sphere_Type',0.0],UNIT['Meter',1.0]]", "NAD_1983_To_WGS_1984_5", "GEOGCS['GCS_North_American_1983',DATUM['D_North_American_1983',SPHEROID['GRS_1980',6378137.0,298.257222101]],PRIMEM['Greenwich',0.0],UNIT['Degree',0.0174532925199433]]")
-arcpy.DeleteField_management("station", ["LATITUDE", "LONGITUDE", "LONG_DISPLAY", "LAT_DISPLAY", "SPECIES_EN", "SPECIES_FR", "ANALYMETHOD", "LOCNAME_FR", "GUIDELOC_FR"])
-arcpy.FeatureClassToShapefile_conversion(["station"], OUTPUT_PATH + "\\Shapefile")
-arcpy.Delete_management(arcpy.env.workspace + "\\station", "FeatureClass")
-
-arcpy.Project_management(arcpy.env.workspace + "\\advisoryIndexDict", arcpy.env.workspace + "\\advisoryIndexDict_Feature", "PROJCS['WGS_1984_Web_Mercator_Auxiliary_Sphere',GEOGCS['GCS_WGS_1984',DATUM['D_WGS_1984',SPHEROID['WGS_1984',6378137.0,298.257223563]],PRIMEM['Greenwich',0.0],UNIT['Degree',0.0174532925199433]],PROJECTION['Mercator_Auxiliary_Sphere'],PARAMETER['False_Easting',0.0],PARAMETER['False_Northing',0.0],PARAMETER['Central_Meridian',0.0],PARAMETER['Standard_Parallel_1',0.0],PARAMETER['Auxiliary_Sphere_Type',0.0],UNIT['Meter',1.0]]", "NAD_1983_To_WGS_1984_5", "GEOGCS['GCS_North_American_1983',DATUM['D_North_American_1983',SPHEROID['GRS_1980',6378137.0,298.257222101]],PRIMEM['Greenwich',0.0],UNIT['Degree',0.0174532925199433]]")
-arcpy.Delete_management(arcpy.env.workspace + "\\advisoryIndexDict", "FeatureClass")
-
-arcpy.Project_management(arcpy.env.workspace + "\\lengthCategory", arcpy.env.workspace + "\\lengthCategory_Feature", "PROJCS['WGS_1984_Web_Mercator_Auxiliary_Sphere',GEOGCS['GCS_WGS_1984',DATUM['D_WGS_1984',SPHEROID['WGS_1984',6378137.0,298.257223563]],PRIMEM['Greenwich',0.0],UNIT['Degree',0.0174532925199433]],PROJECTION['Mercator_Auxiliary_Sphere'],PARAMETER['False_Easting',0.0],PARAMETER['False_Northing',0.0],PARAMETER['Central_Meridian',0.0],PARAMETER['Standard_Parallel_1',0.0],PARAMETER['Auxiliary_Sphere_Type',0.0],UNIT['Meter',1.0]]", "NAD_1983_To_WGS_1984_5", "GEOGCS['GCS_North_American_1983',DATUM['D_North_American_1983',SPHEROID['GRS_1980',6378137.0,298.257222101]],PRIMEM['Greenwich',0.0],UNIT['Degree',0.0174532925199433]]")
-arcpy.Delete_management(arcpy.env.workspace + "\\lengthCategory", "FeatureClass")
-
-arcpy.Project_management(arcpy.env.workspace + "\\analysis", arcpy.env.workspace + "\\analysis_Feature", "PROJCS['WGS_1984_Web_Mercator_Auxiliary_Sphere',GEOGCS['GCS_WGS_1984',DATUM['D_WGS_1984',SPHEROID['WGS_1984',6378137.0,298.257223563]],PRIMEM['Greenwich',0.0],UNIT['Degree',0.0174532925199433]],PROJECTION['Mercator_Auxiliary_Sphere'],PARAMETER['False_Easting',0.0],PARAMETER['False_Northing',0.0],PARAMETER['Central_Meridian',0.0],PARAMETER['Standard_Parallel_1',0.0],PARAMETER['Auxiliary_Sphere_Type',0.0],UNIT['Meter',1.0]]", "NAD_1983_To_WGS_1984_5", "GEOGCS['GCS_North_American_1983',DATUM['D_North_American_1983',SPHEROID['GRS_1980',6378137.0,298.257222101]],PRIMEM['Greenwich',0.0],UNIT['Degree',0.0174532925199433]]")
-arcpy.Delete_management(arcpy.env.workspace + "\\analysis", "FeatureClass")
-
-arcpy.Project_management(arcpy.env.workspace + "\\cause", arcpy.env.workspace + "\\cause_Feature", "PROJCS['WGS_1984_Web_Mercator_Auxiliary_Sphere',GEOGCS['GCS_WGS_1984',DATUM['D_WGS_1984',SPHEROID['WGS_1984',6378137.0,298.257223563]],PRIMEM['Greenwich',0.0],UNIT['Degree',0.0174532925199433]],PROJECTION['Mercator_Auxiliary_Sphere'],PARAMETER['False_Easting',0.0],PARAMETER['False_Northing',0.0],PARAMETER['Central_Meridian',0.0],PARAMETER['Standard_Parallel_1',0.0],PARAMETER['Auxiliary_Sphere_Type',0.0],UNIT['Meter',1.0]]", "NAD_1983_To_WGS_1984_5", "GEOGCS['GCS_North_American_1983',DATUM['D_North_American_1983',SPHEROID['GRS_1980',6378137.0,298.257222101]],PRIMEM['Greenwich',0.0],UNIT['Degree',0.0174532925199433]]")
-arcpy.Delete_management(arcpy.env.workspace + "\\cause", "FeatureClass")
-
-arcpy.Project_management(arcpy.env.workspace + "\\species", arcpy.env.workspace + "\\species_Feature", "PROJCS['WGS_1984_Web_Mercator_Auxiliary_Sphere',GEOGCS['GCS_WGS_1984',DATUM['D_WGS_1984',SPHEROID['WGS_1984',6378137.0,298.257223563]],PRIMEM['Greenwich',0.0],UNIT['Degree',0.0174532925199433]],PROJECTION['Mercator_Auxiliary_Sphere'],PARAMETER['False_Easting',0.0],PARAMETER['False_Northing',0.0],PARAMETER['Central_Meridian',0.0],PARAMETER['Standard_Parallel_1',0.0],PARAMETER['Auxiliary_Sphere_Type',0.0],UNIT['Meter',1.0]]", "NAD_1983_To_WGS_1984_5", "GEOGCS['GCS_North_American_1983',DATUM['D_North_American_1983',SPHEROID['GRS_1980',6378137.0,298.257222101]],PRIMEM['Greenwich',0.0],UNIT['Degree',0.0174532925199433]]")
-arcpy.Delete_management(arcpy.env.workspace + "\\species", "FeatureClass")
+waterbodySpeciesDict = {}
+for row in rows:
+	if row[0] in waterbodySpeciesDict:
+		waterbodySpeciesDict[row[0]].append(row[1])
+	else:
+		waterbodySpeciesDict[row[0]] = [row[1]]
+featureName = "GUIDELOCATIONS"
+featureFieldList = [["WATERBODYC", "LONG", "", "", "", "", "NON_NULLABLE", "REQUIRED", ""], ["LATITUDE", "DOUBLE", "", "", "", "", "NULLABLE", "NON_REQUIRED", ""], ["LONGITUDE", "DOUBLE", "", "", "", "", "NULLABLE", "NON_REQUIRED", ""], ["LAT_DISPLAY", "TEXT", "", "", "", "", "NULLABLE", "NON_REQUIRED", ""], ["LONG_DISPLAY", "TEXT", "", "", "", "", "NULLABLE", "NON_REQUIRED", ""], ["SPECIES_EN", "TEXT", "", "", "4000", "", "NULLABLE", "NON_REQUIRED", ""], ["SPECIES_FR", "TEXT", "", "", "4000", "", "NULLABLE", "NON_REQUIRED", ""], ["LOCNAME_EN", "TEXT", "", "", "", "", "NULLABLE", "NON_REQUIRED", ""], ["LOCNAME_FR", "TEXT", "", "", "", "", "NULLABLE", "NON_REQUIRED", ""], ["GUIDELOC_EN", "TEXT", "", "", "", "", "NULLABLE", "NON_REQUIRED", ""], ["GUIDELOC_FR", "TEXT", "", "", "", "", "NULLABLE", "NON_REQUIRED", ""]]
+featureInsertCursorFields = tuple(["SHAPE@XY"] + map(lambda field: field[0], featureFieldList))
+cursor.execute('SELECT GUIDE_WATERBODY_CODE, GUIDE_LOCNAME_ENG, GUIDE_LOCNAME_FR, LATITUDE, LONGITUDE, GUIDE_LOCDESC FROM FISH_ADVISORY')
+rows = map(lambda row: [(-convertLatLng(row[4]), convertLatLng(row[3]))] + [row[0], convertLatLng(row[3]), -convertLatLng(row[4]), convertLatLngString(row[3]), convertLatLngString(row[4]), getSpeciesNames(waterbodySpeciesDict[row[0]], "EN"), getSpeciesNames(waterbodySpeciesDict[row[0]], "FR"), row[1], row[2], getLocationDescription(row[5], "EN"), getLocationDescription(row[5], "FR")], list(set(cursor.fetchall())))
+createFeatureClass(featureName, rows, featureFieldList, featureInsertCursorFields)
+print len(rows)
 
 # Process: Add Attribute Index
-arcpy.AddIndex_management(arcpy.env.workspace + "\\GuideLocs", "SPECIES_EN;SPECIES_FR;LOCNAME_EN;LOCNAME_FR", "GuideIndex", "NON_UNIQUE", "NON_ASCENDING")
+arcpy.AddIndex_management(arcpy.env.workspace + "\\GUIDELOCATIONS", "SPECIES_EN;SPECIES_FR;LOCNAME_EN;LOCNAME_FR", "GUIDELOCATIONSIndex", "NON_UNIQUE", "NON_ASCENDING")
+arcpy.AddIndex_management(arcpy.env.workspace + "\\ADVISORIES", "GUIDE_WATERBODY_CODE", "ADVISORIESIndex", "NON_UNIQUE", "NON_ASCENDING")
+arcpy.AddIndex_management(arcpy.env.workspace + "\\SPECIES", "SPECIES_CODE", "SPECIESIndex", "NON_UNIQUE", "NON_ASCENDING")
 
 # Prepare the msd, mxd, and readme.txt
 os.system("copy " + INPUT_PATH + "\\SportFish.msd " + OUTPUT_PATH)
