@@ -151,6 +151,8 @@ cursor.execute('SELECT GUIDE_WATERBODY_CODE, GUIDE_LOCNAME_ENG, GUIDE_LOCNAME_FR
 rows = map(lambda row: [(-convertLatLng(row[4]), convertLatLng(row[3]))] + [row[0], convertLatLng(row[3]), -convertLatLng(row[4]), convertLatLngString(row[3]), convertLatLngString(row[4]), getSpeciesNames(waterbodySpeciesDict[row[0]], "EN"), getSpeciesNames(waterbodySpeciesDict[row[0]], "FR"), row[1], row[2], getLocationDescription(row[5], "EN"), getLocationDescription(row[5], "FR")], list(set(cursor.fetchall())))
 createFeatureClass(featureName, rows, featureFieldList, featureInsertCursorFields)
 print len(rows)
+featureFieldList = featureFieldList[:5] + featureFieldList[7:]
+rows = map(lambda row: row[:6] + row[8:], rows)
 createTextFile(OUTPUT_PATH + "\\TXT\\" + featureName + ".txt", rows, featureFieldList)
 
 # Process: Add Attribute Index
