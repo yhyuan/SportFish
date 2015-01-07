@@ -31,6 +31,12 @@ def createFeatureClass(featureName, featureData, featureFieldList, featureInsert
 	arcpy.Delete_management(featureNameNAD83Path, "FeatureClass")
 	print "Finish " + featureName + " feature class."
 
+def createTextFile(fileName, rows, featureFieldList):
+	f = open (fileName,"w")
+	f.write("\t".join(map(lambda field: field[0], featureFieldList)) + "\r\n")
+	f.write("\r\n".join(map(lambda row: "\t".join(map(lambda item: str(item), row[1:])), rows)))
+	f.close()
+
 OUTPUT_PATH = "output"
 INPUT_PATH = "input"
 if arcpy.Exists(OUTPUT_PATH + "\\SportFish.gdb"):
@@ -54,10 +60,11 @@ cursor.execute('SELECT SPECIES_CODE, SPECNAME, NOM_D_ESPECE FROM FISH_ADVISORY')
 rows = map(lambda row: [(0, 0), "" if (row[0] is None) else row[0], "" if (row[1] is None) else row[1], "" if (row[2] is None) else row[2]], list(set(cursor.fetchall())))
 #print len(rows)
 createFeatureClass(featureName, rows, featureFieldList, featureInsertCursorFields)
-print len(rows)
 speciesDict = {}
 for row in rows:
 	speciesDict[row[1]] = [row[2], row[3]]
+createTextFile(OUTPUT_PATH + "\\TXT\\" + featureName + ".txt", rows, featureFieldList)
+
 
 # Generate ADVISORIES feature class. 
 featureName = "ADVISORIES"
@@ -66,6 +73,7 @@ featureInsertCursorFields = tuple(["SHAPE@XY"] + map(lambda field: field[0], fea
 cursor.execute('SELECT GUIDE_WATERBODY_CODE, SPECIES_CODE, POPULATION_TYPE_ID, LENGTH_CATEGORY_ID, ADV_LEVEL, ADV_CAUSE_ID FROM FISH_ADVISORY')
 rows = map(lambda row: [(0, 0)] + list(row), cursor.fetchall())
 createFeatureClass(featureName, rows, featureFieldList, featureInsertCursorFields)
+createTextFile(OUTPUT_PATH + "\\TXT\\" + featureName + ".txt", rows, featureFieldList)
 
 # Generate POPULATION_TYPE feature class. 
 featureName = "POPULATION_TYPE"
@@ -74,6 +82,7 @@ featureInsertCursorFields = tuple(["SHAPE@XY"] + map(lambda field: field[0], fea
 cursor.execute('SELECT POPULATION_TYPE_ID, POPULATION_TYPE_DESC FROM FISH_ADVISORY')
 rows = map(lambda row: [(0, 0)] + list(row), list(set(cursor.fetchall())))
 createFeatureClass(featureName, rows, featureFieldList, featureInsertCursorFields)
+createTextFile(OUTPUT_PATH + "\\TXT\\" + featureName + ".txt", rows, featureFieldList)
 
 # Generate LENGTH_CATEGORY feature class. 
 featureName = "LENGTH_CATEGORY"
@@ -82,6 +91,7 @@ featureInsertCursorFields = tuple(["SHAPE@XY"] + map(lambda field: field[0], fea
 cursor.execute('SELECT LENGTH_CATEGORY_ID, LENGTH_CATEGORY_LABEL FROM FISH_ADVISORY')
 rows = map(lambda row: [(0, 0)] + list(row), list(set(cursor.fetchall())))
 createFeatureClass(featureName, rows, featureFieldList, featureInsertCursorFields)
+createTextFile(OUTPUT_PATH + "\\TXT\\" + featureName + ".txt", rows, featureFieldList)
 
 # Generate ADV_CAUSE feature class. 
 featureName = "ADV_CAUSE"
@@ -90,6 +100,7 @@ featureInsertCursorFields = tuple(["SHAPE@XY"] + map(lambda field: field[0], fea
 cursor.execute('SELECT ADV_CAUSE_ID, ADV_CAUSE_DESC FROM FISH_ADVISORY WHERE ADV_CAUSE_ID IS NOT NULL')
 rows = map(lambda row: [(0, 0)] + list(row), list(set(cursor.fetchall())))
 createFeatureClass(featureName, rows, featureFieldList, featureInsertCursorFields)
+createTextFile(OUTPUT_PATH + "\\TXT\\" + featureName + ".txt", rows, featureFieldList)
 
 # Generate GUIDELOCATIONS feature class. 
 def convertLatLngString(latlng):
@@ -140,6 +151,7 @@ cursor.execute('SELECT GUIDE_WATERBODY_CODE, GUIDE_LOCNAME_ENG, GUIDE_LOCNAME_FR
 rows = map(lambda row: [(-convertLatLng(row[4]), convertLatLng(row[3]))] + [row[0], convertLatLng(row[3]), -convertLatLng(row[4]), convertLatLngString(row[3]), convertLatLngString(row[4]), getSpeciesNames(waterbodySpeciesDict[row[0]], "EN"), getSpeciesNames(waterbodySpeciesDict[row[0]], "FR"), row[1], row[2], getLocationDescription(row[5], "EN"), getLocationDescription(row[5], "FR")], list(set(cursor.fetchall())))
 createFeatureClass(featureName, rows, featureFieldList, featureInsertCursorFields)
 print len(rows)
+createTextFile(OUTPUT_PATH + "\\TXT\\" + featureName + ".txt", rows, featureFieldList)
 
 # Process: Add Attribute Index
 arcpy.AddIndex_management(arcpy.env.workspace + "\\GUIDELOCATIONS", "SPECIES_EN;SPECIES_FR;LOCNAME_EN;LOCNAME_FR", "GUIDELOCATIONSIndex", "NON_UNIQUE", "NON_ASCENDING")
@@ -160,6 +172,16 @@ f.write(data)
 f.close()
 
 # Compress the msd, mxd, readme.txt and file geodatabase together into a zip file named SportFish.zip, which will be send to web service publisher. 
+target_dir = OUTPUT_PATH + '\\TXT'
+zip = zipfile.ZipFile(OUTPUT_PATH + '\\SportFish.TXT.zip', 'w', zipfile.ZIP_DEFLATED)
+rootlen = len(target_dir) + 1
+for base, dirs, files in os.walk(target_dir):
+   for file in files:
+      fn = os.path.join(base, file)
+      zip.write(fn, "TXT\\" + fn[rootlen:])
+zip.close()
+
+# Compress the msd, mxd, readme.txt and file geodatabase together into a zip file named SportFish.zip, which will be send to web service publisher. 
 target_dir = OUTPUT_PATH + '\\SportFish.gdb'
 zip = zipfile.ZipFile(OUTPUT_PATH + '\\SportFish.zip', 'w', zipfile.ZIP_DEFLATED)
 rootlen = len(target_dir) + 1
@@ -171,8 +193,6 @@ zip.write(OUTPUT_PATH + '\\SportFish.msd', "SportFish.msd")
 zip.write(OUTPUT_PATH + '\\SportFish.mxd', "SportFish.mxd")
 zip.write(OUTPUT_PATH + '\\readme_SportFish.txt', "readme_SportFish.txt")
 zip.close()
-
-os.system("del " + OUTPUT_PATH + "\\StationOtherInfo.txt")
 
 elapsed_time = time.time() - start_time
 print elapsed_time
