@@ -52,12 +52,32 @@ file.close()
 connection = cx_Oracle.connect('sportfish/' + password + '@sde')
 cursor = connection.cursor()
 
+speciesEnglishURLDict = {}
+speciesFrenchURLDict = {}
+file = open(INPUT_PATH + '\\Species_URLs.txt', 'r')
+i = 0
+for line in file:
+	i = i + 1
+	if i == 1:
+		continue
+	items = line.strip().split('\t')
+	if items[2] == 'English':
+		if len(items) == 4:
+			speciesEnglishURLDict[items[1]] = items[3]
+		else:
+			speciesEnglishURLDict[items[1]] = ""
+	else:
+		if len(items) == 4:
+			speciesFrenchURLDict[items[1]] = items[3]
+		else:
+			speciesFrenchURLDict[items[1]] = ""
+
 # Generate SPECIES feature class. 
 featureName = "SPECIES"
-featureFieldList = [["SPECIES_CODE", "TEXT", "", "", "", "", "NON_NULLABLE", "REQUIRED", ""], ["SPECNAME", "TEXT", "", "", "", "", "NULLABLE", "NON_REQUIRED", ""], ["NOM_D_ESPECE", "TEXT", "", "", "", "", "NULLABLE", "NON_REQUIRED", ""]]
+featureFieldList = [["SPECIES_CODE", "TEXT", "", "", "", "", "NON_NULLABLE", "REQUIRED", ""], ["SPECNAME", "TEXT", "", "", "", "", "NULLABLE", "NON_REQUIRED", ""], ["NOM_D_ESPECE", "TEXT", "", "", "", "", "NULLABLE", "NON_REQUIRED", ""], ["SPECIES_URL_EN", "TEXT", "", "", "", "", "NULLABLE", "NON_REQUIRED", ""], ["SPECIES_URL_FR", "TEXT", "", "", "", "", "NULLABLE", "NON_REQUIRED", ""]]
 featureInsertCursorFields = tuple(["SHAPE@XY"] + map(lambda field: field[0], featureFieldList))
 cursor.execute('SELECT SPECIES_CODE, SPECNAME, NOM_D_ESPECE FROM FISH_ADVISORY')
-rows = map(lambda row: [(0, 0), "" if (row[0] is None) else row[0], "" if (row[1] is None) else row[1], "" if (row[2] is None) else row[2]], list(set(cursor.fetchall())))
+rows = map(lambda row: [(0, 0), "" if (row[0] is None) else row[0], "" if (row[1] is None) else row[1], "" if (row[2] is None) else row[2]] + [speciesEnglishURLDict.get(row[0],''), speciesFrenchURLDict.get(row[0],'')], list(set(cursor.fetchall())))
 #print len(rows)
 createFeatureClass(featureName, rows, featureFieldList, featureInsertCursorFields)
 speciesDict = {}
@@ -195,6 +215,8 @@ zip.write(OUTPUT_PATH + '\\SportFish.msd', "SportFish.msd")
 zip.write(OUTPUT_PATH + '\\SportFish.mxd', "SportFish.mxd")
 zip.write(OUTPUT_PATH + '\\readme_SportFish.txt', "readme_SportFish.txt")
 zip.close()
+
+
 
 elapsed_time = time.time() - start_time
 print elapsed_time
