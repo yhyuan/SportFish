@@ -217,6 +217,18 @@ zip.write(OUTPUT_PATH + '\\readme_SportFish.txt', "readme_SportFish.txt")
 zip.close()
 
 
+# Generate Data download file . 
+"\t".join
+cursor.execute('SELECT GUIDE_WATERBODY_CODE, GUIDE_LOCNAME_ENG, GUIDE_LOCNAME_FR, LATITUDE, LONGITUDE, SPECIES_CODE, SPECNAME, NOM_D_ESPECE, POPULATION_TYPE_ID, POPULATION_TYPE_DESC, LENGTH_CATEGORY_ID, LENGTH_CATEGORY_LABEL, ADV_LEVEL, ADV_CAUSE_ID, ADV_CAUSE_DESC, ANALYSIS_CLASS_ID, ANALYSIS_DESC, SUBMISSION_NO, WATERBODY_CODE, GUIDE_YEAR, NOTES, GUIDE_LOCDESC FROM FISH_ADVISORY')
+rows = map(lambda row: map(lambda item: ("\"" + item + "\"") if (isinstance(item, str)) else ("" if (item is None) else str(int(item))), list(row)), cursor.fetchall())
+rows = map(lambda row: row[:3] + [(row[3] + "00") if (len(row[3]) == 4) else ((row[3] + "0") if (len(row[3]) == 5) else (row[3]))] + row[4:], rows)
+rows = map(lambda row: row[:4] + [(row[4] + "00") if (len(row[4]) == 4) else ((row[4] + "0") if (len(row[4]) == 5) else (row[4]))] + row[5:], rows)
+rows = map(lambda row: "\t".join(row), rows)
+
+f = open (OUTPUT_PATH + "\FishGuide.txt","w")
+f.write("GUIDE_WATERBODY_CODE\tGUIDE_LOCNAME_ENG\tGUIDE_LOCNAME_FR\tLATITUDE\tLONGITUDE\tSPECIES_CODE\tSPECNAME\tNOM_D_ESPECE\tPOPULATION_TYPE_ID\tPOPULATION_TYPE_DESC\tLENGTH_CATEGORY_ID\tLENGTH_CATEGORY_LABEL\tADV_LEVEL\tADV_CAUSE_ID\tADV_CAUSE_DESC\tANALYSIS_CLASS_ID\tANALYSIS_DESC\tSUBMISSION_NO\tWATERBODY_CODE\tGUIDE_YEAR\tNOTES\tGUIDE_LOCDESC\n")
+f.write("\n".join(rows))
+f.close()
 
 elapsed_time = time.time() - start_time
 print elapsed_time
