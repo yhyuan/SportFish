@@ -27,7 +27,7 @@ def createFeatureClass(featureName, featureData, featureFieldList, featureInsert
 		print "\tError: " + featureName + ": " + e.message
 	# Change the projection to web mercator
 	arcpy.Project_management(featureNameNAD83Path, arcpy.env.workspace + "\\" + featureName, "PROJCS['WGS_1984_Web_Mercator_Auxiliary_Sphere',GEOGCS['GCS_WGS_1984',DATUM['D_WGS_1984',SPHEROID['WGS_1984',6378137.0,298.257223563]],PRIMEM['Greenwich',0.0],UNIT['Degree',0.0174532925199433]],PROJECTION['Mercator_Auxiliary_Sphere'],PARAMETER['False_Easting',0.0],PARAMETER['False_Northing',0.0],PARAMETER['Central_Meridian',0.0],PARAMETER['Standard_Parallel_1',0.0],PARAMETER['Auxiliary_Sphere_Type',0.0],UNIT['Meter',1.0]]", "NAD_1983_To_WGS_1984_5", "GEOGCS['GCS_North_American_1983',DATUM['D_North_American_1983',SPHEROID['GRS_1980',6378137.0,298.257222101]],PRIMEM['Greenwich',0.0],UNIT['Degree',0.0174532925199433]]")
-	#arcpy.FeatureClassToShapefile_conversion([featureNameNAD83Path], OUTPUT_PATH + "\\Shapefile")
+	arcpy.FeatureClassToShapefile_conversion([featureNameNAD83Path], OUTPUT_PATH + "\\Shapefile")
 	arcpy.Delete_management(featureNameNAD83Path, "FeatureClass")
 	print "Finish " + featureName + " feature class."
 
@@ -42,6 +42,7 @@ INPUT_PATH = "input"
 if arcpy.Exists(OUTPUT_PATH + "\\SportFish.gdb"):
 	os.system("rmdir " + OUTPUT_PATH + "\\SportFish.gdb /s /q")
 os.system("del " + OUTPUT_PATH + "\\*SportFish*.*")
+os.system("del " + OUTPUT_PATH + "\\Shapefile\\*SportFish.*")
 arcpy.CreateFileGDB_management(OUTPUT_PATH, "SportFish", "9.3")
 arcpy.env.workspace = OUTPUT_PATH + "\\SportFish.gdb"
 
