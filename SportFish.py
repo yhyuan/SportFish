@@ -50,7 +50,11 @@ arcpy.env.workspace = OUTPUT_PATH + "\\SportFish.gdb"
 file = open("password.txt")
 password = file.readline()
 file.close()
-connection = cx_Oracle.connect('sportfish/' + password + '@sde')
+file = open("username.txt")
+username = file.readline()
+file.close()
+
+connection = cx_Oracle.connect(username + '/' + password + '@sde')
 cursor = connection.cursor()
 
 speciesEnglishURLDict = {}

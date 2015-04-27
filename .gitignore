@@ -1,4 +1,5 @@
 *.txt
 password.txt
+username.txt
 input/
 output/
